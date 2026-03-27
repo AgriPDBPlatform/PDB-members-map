@@ -1,0 +1,684 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Development Bank Members — World Map</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.8.5/d3.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/topojson/3.0.2/topojson.min.js"></script>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,600;1,400&family=IBM+Plex+Mono:wght@300;400;500&display=swap');
+
+:root {
+  --accent:#00ad6b; --accent-dk:#02935b;
+  --p2p:#0f8b93;
+  --text:#1a2e24; --muted:#6b8c7a;
+  --border:#dce8e2; --bg:#f4f7f5;
+}
+
+* { margin:0; padding:0; box-sizing:border-box; }
+body { font-family:'IBM Plex Mono',monospace; background:#fff; color:var(--text); height:100vh; overflow:hidden; display:flex; flex-direction:column; }
+
+/* HEADER */
+header {
+  display:flex; align-items:center; justify-content:space-between;
+  padding:12px 28px 10px; background:#fff;
+  border-bottom:1px solid var(--border);
+  box-shadow:0 1px 4px rgba(0,0,0,.06);
+  flex-shrink:0; z-index:20; gap:12px;
+}
+.header-title { font-family:'Playfair Display',serif; font-size:1.5rem; font-weight:600; color:var(--text); white-space:nowrap; }
+.header-title span { color:var(--accent); font-style:italic; }
+.header-tabs { display:flex; }
+.tab-btn {
+  font-family:'IBM Plex Mono',monospace; font-size:.58rem; letter-spacing:.1em;
+  text-transform:uppercase; padding:4px 13px;
+  border:1px solid var(--border); background:var(--bg); color:var(--muted);
+  cursor:pointer; transition:all .18s; border-right:none;
+}
+.tab-btn:last-child { border-right:1px solid var(--border); }
+.tab-btn.active { background:var(--accent); color:#fff; border-color:var(--accent-dk); }
+.tab-btn:hover:not(.active) { background:#e6f7ef; color:var(--accent-dk); }
+.header-meta { font-size:.55rem; color:var(--muted); letter-spacing:.08em; text-transform:uppercase; text-align:right; line-height:1.8; }
+
+/* LAYOUT */
+.layout { display:flex; flex:1; overflow:hidden; }
+
+/* MAP */
+.map-wrap { flex:1; position:relative; overflow:hidden; background:#fff; }
+#map { width:100%; height:100%; }
+.sphere { fill:#e6f2f0; }
+.graticule { fill:none; stroke:rgba(0,100,70,.05); stroke-width:.4px; }
+.country { fill:#dde8e3; stroke:#c8d8d2; stroke-width:.4px; transition:opacity .2s; }
+.country.member { stroke:rgba(255,255,255,.75); stroke-width:.6px; cursor:pointer; }
+.country.member:hover { opacity:.78; }
+.country.active { stroke:#1a2e24 !important; stroke-width:1.8px !important; opacity:1 !important; }
+.country.p2p-hi { stroke:var(--p2p) !important; stroke-width:1.8px !important; opacity:1 !important; }
+.country.dimmed { opacity:.14; }
+
+/* P2P arcs */
+.arc { fill:none; stroke-width:2px; opacity:0; pointer-events:none; transition:opacity .3s; stroke-dasharray:6 4; animation:flow 1.8s linear infinite; }
+.arc.on { opacity:.88; }
+.adot { opacity:0; pointer-events:none; transition:opacity .3s; }
+.adot.on { opacity:1; }
+@keyframes flow { to { stroke-dashoffset:-20; } }
+
+/* TOOLTIP (desktop hover) */
+#tip {
+  position:absolute; background:#fff; border:1px solid var(--border);
+  border-left:3px solid var(--accent); padding:9px 13px;
+  pointer-events:none; opacity:0; transition:opacity .15s;
+  max-width:240px; box-shadow:0 4px 16px rgba(0,0,0,.11); z-index:50;
+  font-size:.62rem; line-height:1.5;
+}
+#tip.on { opacity:1; }
+#tip .tn { font-family:'Playfair Display',serif; font-size:.95rem; font-weight:600; margin-bottom:2px; }
+#tip .tr { font-size:.54rem; letter-spacing:.12em; text-transform:uppercase; margin-bottom:3px; }
+#tip .tc { color:var(--muted); }
+#tip .tp { color:var(--p2p); font-weight:500; margin-top:2px; }
+#tip .th { font-size:.53rem; color:#bbc; margin-top:3px; font-style:italic; }
+
+/* SIDE PANEL (desktop) */
+.panel {
+  width:320px; background:#fff; border-left:1px solid var(--border);
+  display:flex; flex-direction:column; overflow:hidden;
+  box-shadow:-2px 0 8px rgba(0,0,0,.04);
+}
+.panel-hd { padding:13px 18px 9px; background:var(--bg); border-bottom:1px solid var(--border); flex-shrink:0; }
+.panel-hd .pt { font-family:'Playfair Display',serif; font-size:.95rem; font-weight:600; }
+.panel-hd .ps { font-size:.54rem; color:var(--muted); letter-spacing:.1em; text-transform:uppercase; margin-top:2px; }
+.search-row { padding:7px 12px; border-bottom:1px solid var(--border); flex-shrink:0; }
+.search-row input {
+  width:100%; background:var(--bg); border:1px solid var(--border);
+  color:var(--text); font-family:'IBM Plex Mono',monospace; font-size:.65rem;
+  padding:5px 9px; outline:none;
+}
+.search-row input:focus { border-color:var(--accent); }
+.search-row input::placeholder { color:#aabbb4; }
+.stats { display:flex; border-bottom:1px solid var(--border); flex-shrink:0; }
+.stat { flex:1; padding:8px 6px; border-right:1px solid var(--border); text-align:center; }
+.stat:last-child { border-right:none; }
+.stat .sv { font-family:'Playfair Display',serif; font-size:1.2rem; font-weight:600; color:var(--accent); line-height:1; }
+.stat .sv.b { color:var(--p2p); }
+.stat .sl { font-size:.46rem; letter-spacing:.1em; text-transform:uppercase; color:var(--muted); margin-top:2px; }
+.rfilter { padding:6px 10px 7px; border-bottom:1px solid var(--border); display:flex; flex-wrap:wrap; gap:4px; flex-shrink:0; }
+.rtag {
+  font-size:.47rem; letter-spacing:.07em; text-transform:uppercase;
+  padding:3px 8px; border-radius:20px; background:var(--bg);
+  border:1px solid var(--border); color:var(--muted); cursor:pointer; transition:all .15s; white-space:nowrap;
+}
+.rtag:hover { border-color:var(--accent); color:var(--accent-dk); }
+.rtag.on { color:#fff; border-color:transparent; }
+.pbody { flex:1; overflow-y:auto; }
+.pbody::-webkit-scrollbar { width:3px; }
+.pbody::-webkit-scrollbar-thumb { background:var(--border); border-radius:2px; }
+.empty { display:flex; flex-direction:column; align-items:center; justify-content:center; height:100%; padding:28px 16px; text-align:center; }
+.empty .ei { font-size:1.8rem; margin-bottom:10px; opacity:.3; }
+.empty .et { font-family:'Playfair Display',serif; font-size:.85rem; font-style:italic; color:var(--muted); line-height:1.6; }
+.chd { padding:11px 18px 9px; border-bottom:1px solid var(--border); border-left:4px solid var(--accent); }
+.chd .cn { font-family:'Playfair Display',serif; font-size:1.25rem; font-weight:600; line-height:1.15; }
+.chd .cr { font-size:.54rem; letter-spacing:.12em; text-transform:uppercase; margin-top:3px; font-weight:500; }
+.chd .cc { font-size:.56rem; color:var(--muted); margin-top:2px; }
+.slbl { font-size:.46rem; letter-spacing:.14em; text-transform:uppercase; color:var(--muted); padding:8px 18px 4px; background:var(--bg); border-bottom:1px solid var(--border); }
+.bitem { padding:8px 18px; border-bottom:1px solid #eef2f0; font-size:.71rem; line-height:1.4; }
+.bitem:hover { background:#f3fbf7; }
+.p2p-sec { padding:4px 0 8px; }
+.p2p-card {
+  margin:5px 10px; border:1px solid #c6e5e8; background:#f0f9fa;
+  padding:8px 11px; cursor:pointer; transition:all .16s; position:relative; border-radius:2px;
+}
+.p2p-card::before { content:''; position:absolute; left:0; top:0; bottom:0; width:3px; background:var(--p2p); border-radius:2px 0 0 2px; }
+.p2p-card:hover { border-color:#9bd3da; background:#e5f5f7; }
+.p2p-card.on { border-color:var(--p2p); background:#d8f0f3; }
+.p2p-topic { font-size:.65rem; color:var(--p2p); font-weight:500; margin-bottom:5px; line-height:1.3; }
+.p2p-row { display:flex; flex-wrap:wrap; gap:4px; align-items:center; }
+.ptag { font-size:.54rem; padding:2px 7px; border-radius:20px; border:1px solid #b0d8de; color:var(--p2p); background:#fff; }
+.ptag.s { border-color:#a6ddc4; color:var(--accent-dk); background:#edfaf3; }
+.parr { font-size:.6rem; color:var(--muted); }
+.p2p-li { padding:9px 18px; border-bottom:1px solid #edf3f1; cursor:pointer; transition:background .14s; }
+.p2p-li:hover { background:#f0f9fa; }
+.p2p-li.on { background:#e5f5f7; border-left:3px solid var(--p2p); padding-left:15px; }
+.p2p-lt { font-size:.65rem; font-weight:500; margin-bottom:4px; }
+.p2p-lp { display:flex; flex-wrap:wrap; gap:4px; align-items:center; }
+.sres { padding:7px 18px; border-bottom:1px solid #eef2f0; cursor:pointer; transition:background .14s; }
+.sres:hover { background:#f3fbf7; }
+.sres .sc { font-family:'Playfair Display',serif; font-size:.88rem; font-weight:600; color:var(--accent-dk); }
+.sres .sb { font-size:.65rem; line-height:1.4; margin-top:2px; }
+.sres .sr { font-size:.52rem; color:var(--muted); text-transform:uppercase; letter-spacing:.08em; margin-top:2px; }
+mark { background:rgba(0,173,107,.15); border-radius:2px; padding:0 1px; }
+.leg { padding:8px 16px; border-top:1px solid var(--border); display:flex; flex-wrap:wrap; gap:8px; align-items:center; font-size:.49rem; color:var(--muted); flex-shrink:0; }
+.li { display:flex; align-items:center; gap:4px; }
+.ld { width:9px; height:9px; border-radius:2px; }
+.ll { width:16px; height:0; border-top:2px dashed var(--p2p); }
+
+/* ─── MOBILE (≤900px) ─── */
+@media (max-width:900px) {
+  header { padding:9px 14px 8px; flex-wrap:wrap; gap:5px; }
+  .header-title { font-size:1rem; }
+  .header-meta { display:none; }
+  .header-tabs { order:3; width:100%; }
+  .tab-btn { flex:1; text-align:center; font-size:.52rem; padding:4px 6px; }
+  .layout { flex-direction:column; }
+  .map-wrap { flex:1; }
+  .panel { display:none; }
+
+  /* click card */
+  .mcard {
+    display:none; position:absolute;
+    background:#fff; border:1px solid var(--border); border-radius:8px;
+    padding:11px 13px 10px; min-width:180px; max-width:250px;
+    box-shadow:0 6px 20px rgba(0,0,0,.13); z-index:200;
+    animation:cin .16s ease;
+  }
+  .mcard.on { display:block; }
+  @keyframes cin { from{opacity:0;transform:translateY(5px)} to{opacity:1;transform:none} }
+  .mcard-x { position:absolute; top:7px; right:9px; background:none; border:none; font-size:.75rem; color:var(--muted); cursor:pointer; }
+  .mcard-name { font-family:'Playfair Display',serif; font-size:.95rem; font-weight:600; margin-bottom:5px; padding-right:18px; line-height:1.2; }
+  .mcard-reg { display:inline-block; font-size:.48rem; letter-spacing:.09em; text-transform:uppercase; padding:2px 7px; border-radius:20px; color:#fff; margin-bottom:7px; }
+  .mcard-stats { display:flex; gap:8px; font-size:.58rem; color:var(--muted); border-top:1px solid var(--border); padding-top:6px; }
+  .mcard-stat { display:flex; flex-direction:column; align-items:center; flex:1; }
+  .mcard-val { font-family:'Playfair Display',serif; font-size:1rem; font-weight:600; color:var(--accent); line-height:1; }
+  .mcard-val.b { color:var(--p2p); }
+  .mcard-lbl { font-size:.44rem; letter-spacing:.08em; text-transform:uppercase; margin-top:2px; }
+  .mcard-div { width:1px; background:var(--border); }
+  .mcard-btn {
+    display:block; width:100%; margin-top:8px; padding:6px;
+    background:var(--accent); color:#fff; border:none; border-radius:4px;
+    font-family:'IBM Plex Mono',monospace; font-size:.52rem;
+    letter-spacing:.09em; text-transform:uppercase; cursor:pointer;
+  }
+
+  /* bottom drawer */
+  .drawer-scrim { display:none; position:fixed; inset:0; background:rgba(0,0,0,.22); z-index:400; }
+  .drawer-scrim.on { display:block; }
+  .drawer {
+    position:fixed; left:0; right:0; bottom:0;
+    background:#fff; border-radius:14px 14px 0 0;
+    box-shadow:0 -4px 24px rgba(0,0,0,.14); z-index:500;
+    max-height:72vh; display:flex; flex-direction:column; overflow:hidden;
+    transform:translateY(100%); transition:transform .28s cubic-bezier(.4,0,.2,1);
+  }
+  .drawer.on { transform:translateY(0); }
+  .drawer-grip { width:36px; height:4px; background:var(--border); border-radius:2px; margin:10px auto 0; cursor:pointer; flex-shrink:0; }
+  .drawer-top { display:flex; align-items:center; justify-content:space-between; padding:9px 16px 7px; border-bottom:1px solid var(--border); flex-shrink:0; }
+  .drawer-title { font-family:'Playfair Display',serif; font-size:1rem; font-weight:600; }
+  .drawer-close { background:none; border:1px solid var(--border); border-radius:50%; width:26px; height:26px; font-size:.75rem; color:var(--muted); cursor:pointer; }
+  .drawer-body { flex:1; overflow-y:auto; }
+  .drawer-body::-webkit-scrollbar { width:3px; }
+  .drawer-body::-webkit-scrollbar-thumb { background:var(--border); border-radius:2px; }
+}
+@media (max-width:480px) {
+  .header-title { font-size:.9rem; }
+}
+</style>
+</head>
+<body>
+
+<header>
+  <div>
+    <div class="header-title">Development Bank <span>Members</span></div>
+  </div>
+  <div class="header-tabs">
+    <button class="tab-btn active" id="tab-members" onclick="setTab('members')">Member Map</button>
+    <button class="tab-btn"        id="tab-p2p"     onclick="setTab('p2p')">P2P Exchanges</button>
+  </div>
+  <div class="header-meta">95 Countries · 147 Banks<br>Hover · Click to explore</div>
+</header>
+
+<div class="layout">
+  <div class="map-wrap" id="map-wrap">
+    <svg id="map"></svg>
+
+    <!-- desktop tooltip -->
+    <div id="tip">
+      <div class="tn" id="tip-name"></div>
+      <div class="tr" id="tip-region"></div>
+      <div class="tc" id="tip-count"></div>
+      <div class="tp" id="tip-p2p"></div>
+      <div class="th">Click to explore</div>
+    </div>
+
+    <!-- mobile click-card (inside map-wrap so position:absolute works) -->
+    <div class="mcard" id="mcard">
+      <button class="mcard-x" id="mcard-x">✕</button>
+      <div class="mcard-name" id="mcard-name"></div>
+      <span class="mcard-reg" id="mcard-reg"></span>
+      <div class="mcard-stats">
+        <div class="mcard-stat">
+          <div class="mcard-val"  id="mcard-banks">—</div>
+          <div class="mcard-lbl">Engagements</div>
+        </div>
+        <div class="mcard-div"></div>
+        <div class="mcard-stat">
+          <div class="mcard-val b" id="mcard-p2p">—</div>
+          <div class="mcard-lbl">P2P</div>
+        </div>
+      </div>
+      <button class="mcard-btn" id="mcard-btn">View banks ↓</button>
+    </div>
+  </div>
+
+  <!-- desktop side panel -->
+  <div class="panel" id="panel">
+    <div class="panel-hd">
+      <div class="pt" id="panel-title">Member Banks</div>
+      <div class="ps" id="panel-sub">Select a highlighted country</div>
+    </div>
+    <div class="search-row" id="search-row">
+      <input type="text" id="search" placeholder="Search country or bank…" autocomplete="off">
+    </div>
+    <div class="stats">
+      <div class="stat"><div class="sv">95</div><div class="sl">Countries</div></div>
+      <div class="stat"><div class="sv">715</div><div class="sl">Engagements</div></div>
+      <div class="stat"><div class="sv b">4</div><div class="sl">P2P Topics</div></div>
+    </div>
+    <div class="rfilter" id="rfilter"></div>
+    <div class="pbody" id="pbody">
+      <div class="empty"><div class="ei">🌍</div><div class="et">Click a highlighted country to explore its member banks and P2P exchanges.</div></div>
+    </div>
+    <div class="leg">
+      <div class="li"><div class="ld" style="background:#00ad6b"></div>Lat. America</div>
+      <div class="li"><div class="ld" style="background:#2d8a4e"></div>E &amp; S Africa</div>
+      <div class="li"><div class="ld" style="background:#1d6fa8"></div>W &amp; C Africa</div>
+      <div class="li"><div class="ld" style="background:#4db9ef"></div>Asia &amp; Pacific</div>
+      <div class="li"><div class="ld" style="background:#0f8b93"></div>Near East/MENA</div>
+      <div class="li"><div class="ll"></div>P2P link</div>
+    </div>
+  </div>
+</div>
+
+<!-- mobile drawer (outside layout, fixed) -->
+<div class="drawer-scrim" id="dscrim"></div>
+<div class="drawer" id="drawer">
+  <div class="drawer-grip" id="drawer-grip"></div>
+  <div class="drawer-top">
+    <div class="drawer-title" id="drawer-title">Banks</div>
+    <button class="drawer-close" id="drawer-close">✕</button>
+  </div>
+  <div class="drawer-body" id="drawer-body"></div>
+</div>
+
+<script>
+// ── DATA ─────────────────────────────────────────────────────────────────
+const CD={"AF":{"country":"Afghanistan","region":"Asia and the Pacific","banks":["The Agricultural Development Fund Afghanistan (ADF)"]},"DZ":{"country":"Algeria","region":"Near East, North Africa and Europe","banks":["Banque de l'agriculture et de développement rural (BADR)"]},"AO":{"country":"Angola","region":"East and Southern Africa","banks":["Banco De Poupanca E Credito (BPC)","Banco de Desenvolvimento de Angola (BDA)"]},"AR":{"country":"Argentina","region":"Latin America and the Caribbean","banks":["Fondo de Garantías de Buenos Aires (FOGABA)","Banco de Inversión y Comercio Exterior S.A. (BICE)","Banco de la Provincia de Buenos Aires"]},"AM":{"country":"Armenia","region":"Near East, North Africa and Europe","banks":["Development and Investment Corporation of Armenia (DICA)"]},"AZ":{"country":"Azerbaijan","region":"Near East, North Africa and Europe","banks":["Agrarkredit Joint-Stock Credit Organization of Azerbaijan Republic (Agrarkredit)"]},"BS":{"country":"Bahamas","region":"Latin America and the Caribbean","banks":["Bahamas Development Bank (BDB Bahamas)"]},"BH":{"country":"Bahrain","region":"Near East, North Africa and Europe","banks":["Bahrein Development Bank (BDB Bahrein)"]},"BD":{"country":"Bangladesh","region":"Asia and the Pacific","banks":["Palli Karma Sahayak Foundation (PKSF)","Saudi-Bangladesh Industrial and Agricultural Investment Company (SABINCO)"]},"BZ":{"country":"Belize","region":"Latin America and the Caribbean","banks":["Development Finance Corporation (DFC)","Belize Marketing and Development Corporation (BMDC)"]},"BJ":{"country":"Bénin","region":"West and Central Africa","banks":["Caisse des Dépôts et Consignations Benin (CDCB)","Fonds National de Développement Agricole (FNDA)"]},"BT":{"country":"Bhutan","region":"Asia and the Pacific","banks":["Bhutan Development Bank (BDB Bhutan)","Bhutan Development Bank (BDB)"]},"BO":{"country":"Bolivia","region":"Latin America and the Caribbean","banks":["Banco de Desarrollo Productivo (BDP)"]},"BW":{"country":"Botswana","region":"East and Southern Africa","banks":["Botswana Development Corporation (BDC)","Citizen Entrepreneurial Development Agency (CEDA)","National Development Bank (NDB)"]},"BR":{"country":"Brazil","region":"Latin America and the Caribbean","banks":["Banco da Amazônia","Banco Cooperativo Sicredi S.A","Banco de Desenvolvimento de Minas Gerais (BDMG)","Banco do Nordeste do Brasil S.A. (BNB)","The Brazilian Development Bank (BNDES)"]},"BF":{"country":"Burkina Faso","region":"West and Central Africa","banks":["Banque Agricole Du Faso (BADF)"]},"BI":{"country":"Burundi","region":"East and Southern Africa","banks":["Banque Nationale Pour Le Développement Économique (BNDE)"]},"KH":{"country":"Cambodia","region":"Asia and the Pacific","banks":["Agricultural and Rural Development Bank (ARDB)"]},"CM":{"country":"Cameroon","region":"West and Central Africa","banks":["Société Nationale d'Investissement du Cameroun (SNI)"]},"CL":{"country":"Chile","region":"Latin America and the Caribbean","banks":["Instituto Nacional de Desarrollo Agropecuario (INDAP)"]},"CN":{"country":"China","region":"Asia and the Pacific","banks":["Agricultural Development Bank of China (ADBC)","China Development Bank (CDB)"]},"CO":{"country":"Colombia","region":"Latin America and the Caribbean","banks":["BANCOLDEX","Banco Agrario de Colombia","Fondo para el Financiamiento del Sector Agropecuario (FINAGRO)"]},"CK":{"country":"Cook Islands","region":"Asia and the Pacific","banks":["Bank of the Cook Islands (BCI)"]},"CR":{"country":"Costa Rica","region":"Latin America and the Caribbean","banks":["Banco Popular","Fundecooperacion para el Desarrollo Sostenible","Banco de Costa Rica (BCR)","Banco Nacional de Costa Rica (BNCR)"]},"CI":{"country":"Côte d'Ivoire","region":"West and Central Africa","banks":["Banque Nationale d'investissement (BNI)"]},"CU":{"country":"Cuba","region":"Latin America and the Caribbean","banks":["Banco de Crédito y Comercio (BANDEC)"]},"CD":{"country":"DR Congo","region":"West and Central Africa","banks":["La Société Financière de Développement (SOFIDE S.A.)"]},"DO":{"country":"Dominican Republic","region":"Latin America and the Caribbean","banks":["Banco Agrícola De la República Dominicana"]},"EC":{"country":"Ecuador","region":"Latin America and the Caribbean","banks":["Corporación Nacional de Finanzas Populares y Solidarias (CONAFIPS)","Banco de Desarrollo de Ecuador (BDE)","BanEcuador"]},"EG":{"country":"Egypt","region":"Near East, North Africa and Europe","banks":["Agricultural Bank of Egypt (ABE)"]},"SV":{"country":"El Salvador","region":"Latin America and the Caribbean","banks":["Banco De Fomento Agropecuario (BFA)"]},"AE":{"country":"UAE","region":"Near East, North Africa and Europe","banks":["Emirates Development Bank (EDB)"]},"SZ":{"country":"Eswatini","region":"East and Southern Africa","banks":["Eswatini National Industrial Development Corporation (ENIDC)","Eswatini Development Finance Corporation (FINCORP)"]},"ET":{"country":"Ethiopia","region":"East and Southern Africa","banks":["Development Bank of Ethiopia (DBE)"]},"FJ":{"country":"Fiji","region":"Asia and the Pacific","banks":["Fiji Development Bank (FDB)"]},"GA":{"country":"Gabon","region":"West and Central Africa","banks":["Caisse des Dépôts et Consignations du Gabon (CDC)"]},"GH":{"country":"Ghana","region":"West and Central Africa","banks":["ARB Apex Bank","Agricultural Development Bank (ADB)","Ghana Incentive-Based Risk-Sharing System for Agricultural Lending Project (GIRSAL)"]},"GT":{"country":"Guatemala","region":"Latin America and the Caribbean","banks":["Banrural Guatemala"]},"HN":{"country":"Honduras","region":"Latin America and the Caribbean","banks":["Banco Nacional de Desarrollo Agrícola (BANADESA)"]},"IN":{"country":"India","region":"Asia and the Pacific","banks":["National Bank for Agriculture and Rural Development (NABARD)","National Cooperative Development Corporation (NCDC)"]},"ID":{"country":"Indonesia","region":"Asia and the Pacific","banks":["Bank Rakyat Indonesia (BRI)","Madani National Capital"]},"IR":{"country":"Iran","region":"Near East, North Africa and Europe","banks":["Agricultural Bank of Iran (BKI)"]},"JM":{"country":"Jamaica","region":"Latin America and the Caribbean","banks":["Development Bank of Jamaica (DBJ)"]},"KZ":{"country":"Kazakhstan","region":"Near East, North Africa and Europe","banks":["Development Bank of Kazakhstan JSC (DBK)","Kazagro Kazakhstan"]},"KE":{"country":"Kenya","region":"East and Southern Africa","banks":["Agricultural Finance Corporation (AFC)"]},"LA":{"country":"Laos","region":"Asia and the Pacific","banks":["Agricultural Promotion Bank (APB)"]},"LS":{"country":"Lesotho","region":"East and Southern Africa","banks":["Lesotho National Development Corporation (LNDC)"]},"LR":{"country":"Liberia","region":"West and Central Africa","banks":["Liberian Bank For Development And Investment (LBDI)"]},"MG":{"country":"Madagascar","region":"East and Southern Africa","banks":["Société Nationale de Participations (SONAPAR)"]},"MW":{"country":"Malawi","region":"East and Southern Africa","banks":["Malawi Agriculture and Industrial Investment Corporation (MAIIC)"]},"MY":{"country":"Malaysia","region":"Asia and the Pacific","banks":["Agrobank Malaysia","Sabah Development Bank (SDB)"]},"ML":{"country":"Mali","region":"West and Central Africa","banks":["Banque Nationale de Développement Agricole (BNDA)"]},"MR":{"country":"Mauritania","region":"West and Central Africa","banks":["Le Crédit Agricole de Mauritanie (CAM)"]},"MU":{"country":"Mauritius","region":"East and Southern Africa","banks":["Development Bank Of Mauritius (DBM)"]},"MX":{"country":"Mexico","region":"Latin America and the Caribbean","banks":["Banco del Bienestar (BDB Mexico)","Fideicomisos Instituidos en Relación con la Agricultura (FIRA)","Fondo de Capitalización e Inversión del Sector Rural (FOCIR)"]},"MA":{"country":"Morocco","region":"Near East, North Africa and Europe","banks":["Crédit Agricole du Maroc (CAM)","Caisse de Dépôt et de Gestion (CDG)"]},"MZ":{"country":"Mozambique","region":"East and Southern Africa","banks":["GAPI-SI"]},"MM":{"country":"Myanmar","region":"Asia and the Pacific","banks":["Myanmar Agricultural Development Bank (MADB)"]},"NA":{"country":"Namibia","region":"East and Southern Africa","banks":["Agribank of Namibia"]},"NP":{"country":"Nepal","region":"Asia and the Pacific","banks":["Agricultural Development Bank Limited (ADBL)"]},"NI":{"country":"Nicaragua","region":"Latin America and the Caribbean","banks":["Banco de Fomento a la Producción (BFP)","Banco Lafise"]},"NE":{"country":"Niger","region":"West and Central Africa","banks":["La Banque Agricole du Niger (BAGRI)"]},"NG":{"country":"Nigeria","region":"West and Central Africa","banks":["Bank of Agriculture (BOA)","Development Bank of Nigeria (DBN)","The Nigeria Incentive-Based Risk Sharing System for Agricultural Lending (NIRSAL Plc)"]},"CY":{"country":"Northern Cyprus","region":"Near East, North Africa and Europe","banks":["Turkish Republic of Northern Cyprus Development Bank (TRNCDB)"]},"OM":{"country":"Oman","region":"Near East, North Africa and Europe","banks":["Oman Development Bank (ODB)"]},"PK":{"country":"Pakistan","region":"Asia and the Pacific","banks":["Saudi Pak Industrial and Agricultural Investment Company Ltd. (SAPICO)","Zarai Taraqiati Bank Limited (ZTBL)"]},"PA":{"country":"Panama","region":"Latin America and the Caribbean","banks":["Banco de Desarrollo Agropecuario (BDA)"]},"PY":{"country":"Paraguay","region":"Latin America and the Caribbean","banks":["Banco Nacional de Fomento (BNF)","Crédito Agrícola de Habilitación (CAH)","Fondo Ganadero","Agencia Financiera de Desarrollo (AFD Paraguay)"]},"PE":{"country":"Peru","region":"Latin America and the Caribbean","banks":["Agrobanco","Corporación Financiera de Desarrollo S.A. (COFIDE)"]},"PH":{"country":"Philippines","region":"Asia and the Pacific","banks":["Development Bank of the Philippines (DBP)","Land Bank of the Philippines (LBP)"]},"QA":{"country":"Qatar","region":"Near East, North Africa and Europe","banks":["Qatar Development Bank (QDB)"]},"RW":{"country":"Rwanda","region":"East and Southern Africa","banks":["Development Bank of Rwanda (BRD)"]},"WS":{"country":"Samoa","region":"Asia and the Pacific","banks":["Development Bank of Samoa (DBS)"]},"SA":{"country":"Saudi Arabia","region":"Near East, North Africa and Europe","banks":["Saudi Agricultural Development Fund (ADF)"]},"SN":{"country":"Senegal","region":"West and Central Africa","banks":["La Banque Agricole (LBA)"]},"SC":{"country":"Seychelles","region":"East and Southern Africa","banks":["Development Bank Of Seychelles (DBS)"]},"SG":{"country":"Singapore","region":"Asia and the Pacific","banks":["The Development Bank of Singapore Limited (DBS Bank)"]},"SB":{"country":"Solomon Islands","region":"Asia and the Pacific","banks":["Development Bank of Solomon Islands (DBSI)"]},"SO":{"country":"Somalia","region":"Near East, North Africa and Europe","banks":["Somali Development and Reconstruction Bank (SDRB)"]},"ZA":{"country":"South Africa","region":"East and Southern Africa","banks":["Development Bank of Southern Africa (DBSA)","Land and Agricultural Development Bank of South Africa (Land Bank)"]},"LK":{"country":"Sri Lanka","region":"Asia and the Pacific","banks":["Regional Development Bank (RDB)"]},"SD":{"country":"Sudan","region":"Near East, North Africa and Europe","banks":["Agricultural Bank of Sudan (ABS)"]},"TZ":{"country":"Tanzania","region":"East and Southern Africa","banks":["Tanzania Agricultural Development Bank (TADB)"]},"TH":{"country":"Thailand","region":"Asia and the Pacific","banks":["Bank for Agriculture and Agriculture Cooperatives (BAAC)"]},"TT":{"country":"Trinidad and Tobago","region":"Latin America and the Caribbean","banks":["Agricultural Development Bank of Trinidad and Tobago (ADB)"]},"TN":{"country":"Tunisia","region":"Near East, North Africa and Europe","banks":["Banque Nationale Agricole (BNA)","Caisse des Dépôts et Consignations (CDC)"]},"TR":{"country":"Türkiye","region":"Near East, North Africa and Europe","banks":["Kredi Garanti Fonu (KGF)","Industrial Development Bank of Turkey (TSKB)","Ziraat Bankası"]},"UG":{"country":"Uganda","region":"East and Southern Africa","banks":["PostBank Uganda","Uganda Development Bank Ltd (UDB)"]},"UY":{"country":"Uruguay","region":"Latin America and the Caribbean","banks":["Agencia Nacional de Desarrollo Económico (ANDE)"]},"UZ":{"country":"Uzbekistan","region":"Near East, North Africa and Europe","banks":["Business Development Bank (BDB) of Uzbekistan","Agrobank Uzbekistan"]},"VU":{"country":"Vanuatu","region":"Asia and the Pacific","banks":["Vanuatu Rural Development Bank (VRDB)","Vanuatu Agriculture Development Bank (VADB)"]},"VN":{"country":"Vietnam","region":"Asia and the Pacific","banks":["Vietnam Bank for Agriculture and Rural Development (VBARD)"]},"YE":{"country":"Yemen","region":"Near East, North Africa and Europe","banks":["Cooperative Agricultural Credit Bank (CAC Bank Yemen)"]},"ZM":{"country":"Zambia","region":"East and Southern Africa","banks":["Citizens Economic Empowerment Commission (CEEC)","Development Bank of Zambia (DBZ)","Industrial Development Corporation Zambia (IDC)"]},"ZW":{"country":"Zimbabwe","region":"East and Southern Africa","banks":["Agricultural Bank of Zimbabwe (ADBZ)"]}};
+
+const P2P=[
+  {topic:"Sustainability strategies",       from:{iso:"MX",abbr:"FIRA"},   to:{iso:"MA",abbr:"CAM"}},
+  {topic:"Sustainability strategies",       from:{iso:"MX",abbr:"FIRA"},   to:{iso:"CN",abbr:"ADBC"}},
+  {topic:"Environmental impact assessment", from:{iso:"MX",abbr:"FIRA"},   to:{iso:"CO",abbr:"FINAGRO"}},
+  {topic:"Agri-finance & monitoring",       from:{iso:"CO",abbr:"FINAGRO"},to:{iso:"TZ",abbr:"TADB"}},
+  {topic:"Agroecology: JIVA project",       from:{iso:"IN",abbr:"NABARD"}, to:{iso:"MW",abbr:"MAIIC"}}
+];
+
+
+const MEMBER_COUNTS={"AF":4,"DZ":1,"AO":4,"AR":5,"AM":1,"AZ":9,"BS":5,"BH":1,"BD":4,"BZ":11,"BT":3,"BO":7,"BW":32,"BR":63,"BF":2,"BI":4,"BJ":18,"KH":10,"CM":1,"CL":6,"CN":13,"CO":52,"CK":1,"CR":5,"CU":3,"CI":5,"CD":1,"DO":5,"EC":8,"EG":2,"SV":7,"SZ":2,"ET":5,"FJ":5,"GA":5,"GH":7,"GT":2,"HN":3,"IN":19,"ID":2,"IR":1,"JM":1,"KZ":3,"KE":10,"LA":5,"LS":9,"LR":1,"MG":1,"MW":7,"MY":2,"ML":16,"MR":2,"MU":3,"MX":26,"MA":14,"MZ":4,"MM":1,"NA":2,"NP":3,"NI":10,"NE":27,"NG":18,"CY":1,"OM":2,"PK":3,"PA":1,"PY":20,"PE":12,"PH":4,"QA":1,"RW":10,"WS":3,"SA":1,"SN":6,"SC":1,"SG":1,"SB":4,"SO":1,"ZA":25,"LK":1,"SD":3,"TZ":13,"TH":5,"TT":2,"TN":6,"TR":26,"AE":5,"UG":19,"UY":5,"UZ":9,"VU":3,"VN":1,"YE":4,"ZM":7,"ZW":1};
+
+const ARC_COL={"Sustainability strategies":"#2980b9","Environmental impact assessment":"#00ad6b","Agri-finance & monitoring":"#e67e22","Agroecology: JIVA project":"#8e44ad"};
+
+const RC={"Latin America and the Caribbean":"#00ad6b","East and Southern Africa":"#2d8a4e","West and Central Africa":"#1d6fa8","Asia and the Pacific":"#4db9ef","Near East, North Africa and Europe":"#0f8b93"};
+const RS={"Latin America and the Caribbean":"Lat. America","Near East, North Africa and Europe":"Near East & MENA","East and Southern Africa":"E & S Africa","West and Central Africa":"W & C Africa","Asia and the Pacific":"Asia & Pacific"};
+
+const N2I={};
+const isoNum={AF:"004",AO:"024",AR:"032",AM:"051",AZ:"031",BS:"044",BH:"048",BD:"050",BZ:"084",BJ:"204",BT:"064",BO:"068",BW:"072",BR:"076",BF:"854",BI:"108",KH:"116",CM:"120",CL:"152",CN:"156",CO:"170",CK:"184",CR:"188",CI:"384",CU:"192",CD:"180",DO:"214",EC:"218",EG:"818",SV:"222",AE:"784",SZ:"748",ET:"231",FJ:"242",GA:"266",GH:"288",GT:"320",HN:"340",IN:"356",ID:"360",IR:"364",JM:"388",KZ:"398",KE:"404",LA:"418",LS:"426",LR:"430",MG:"450",MW:"454",MY:"458",ML:"466",MR:"478",MU:"480",MX:"484",MA:"504",MZ:"508",MM:"104",NA:"516",NP:"524",NI:"558",NE:"562",NG:"566",CY:"196",OM:"512",PK:"586",PA:"591",PY:"600",PE:"604",PH:"608",QA:"634",RW:"646",WS:"882",SA:"682",SN:"686",SC:"690",SG:"702",SB:"090",SO:"706",ZA:"710",LK:"144",SD:"736",TZ:"834",TH:"764",TT:"780",TN:"788",TR:"792",UG:"800",UY:"858",UZ:"860",VU:"548",VN:"704",YE:"887",ZM:"894",ZW:"716",DZ:"012"};
+Object.entries(isoNum).forEach(([k,v])=>N2I[v]=k);
+N2I['158']='CN'; // Taiwan → China
+const MEMBERS=new Set(Object.keys(CD));
+const SKIP_LABEL=new Set(['BS','BH','CK','CY','FJ','JM','MU','QA','SC','SG','SB','TT','VU','WS','BT','BZ','LS','SZ','MR']);
+const FALL={"MX":[-102,23],"MA":[-7,32],"CN":[105,35],"CO":[-74,4],"TZ":[35,-6],"IN":[79,20],"MW":[34,-13]};
+
+function rc(iso){return RC[CD[iso]?.region]||null;}
+function p2pFor(iso){return P2P.filter(p=>p.from.iso===iso||p.to.iso===iso);}
+function isMobile(){return window.innerWidth<=900;}
+
+// ── MAP ───────────────────────────────────────────────────────────────────
+const mapWrap=document.getElementById('map-wrap');
+const svg=d3.select('#map');
+let W=mapWrap.clientWidth, H=mapWrap.clientHeight;
+const proj=d3.geoNaturalEarth1().scale(W/6.2).translate([W/2,H/2]);
+const pg=d3.geoPath().projection(proj);
+svg.attr('viewBox',`0 0 ${W} ${H}`);
+
+const graticule=d3.geoGraticule();
+svg.append('path').datum({type:'Sphere'}).attr('class','sphere').attr('d',pg);
+svg.append('path').datum(graticule()).attr('class','graticule').attr('d',pg);
+
+const gArcs=svg.append('g');
+const gDots=svg.append('g');
+
+
+const tip=document.getElementById('tip');
+const centroids={};
+
+fetch('https://cdn.jsdelivr.net/npm/world-atlas@2/countries-110m.json')
+  .then(r=>r.json()).then(world=>{
+    const feats=topojson.feature(world,world.objects.countries).features;
+
+    feats.forEach(f=>{
+      const iso=N2I[String(f.id).padStart(3,'0')];
+      if(iso){const c=pg.centroid(f);if(c&&!isNaN(c[0]))centroids[iso]=c;}
+    });
+
+    svg.insert('g','g').selectAll('path')
+      .data(feats).enter().append('path')
+      .attr('class',d=>{const iso=N2I[String(d.id).padStart(3,'0')];return iso&&MEMBERS.has(iso)?'country member':'country';})
+      .attr('d',pg)
+      .style('fill',d=>{const iso=N2I[String(d.id).padStart(3,'0')];return iso&&MEMBERS.has(iso)?rc(iso):null;})
+      .on('mousemove',function(ev,d){
+        if(isMobile())return;
+        const iso=N2I[String(d.id).padStart(3,'0')];
+        if(!iso||!MEMBERS.has(iso))return;
+        const info=CD[iso], col=rc(iso);
+        document.getElementById('tip-name').textContent=info.country;
+        const tr=document.getElementById('tip-region'); tr.textContent=info.region; tr.style.color=col;
+        tip.style.borderLeftColor=col;
+        const mc=MEMBER_COUNTS[iso]||info.banks.length; document.getElementById('tip-count').textContent=`${mc} member engagement${mc>1?'s':''}`;
+        const p2pl=p2pFor(iso).length;
+        const tp=document.getElementById('tip-p2p');
+        tp.textContent=p2pl?`↔ ${p2pl} P2P exchange${p2pl>1?'s':''}`:'' ; tp.style.display=p2pl?'':'none';
+        const r=mapWrap.getBoundingClientRect();
+        let tx=ev.clientX-r.left+14, ty=ev.clientY-r.top-10;
+        if(tx+250>W) tx=ev.clientX-r.left-255;
+        tip.style.left=tx+'px'; tip.style.top=ty+'px';
+        tip.classList.add('on');
+      })
+      .on('mouseleave',()=>tip.classList.remove('on'))
+      .on('click',function(ev,d){
+        const iso=N2I[String(d.id).padStart(3,'0')];
+        if(!iso||!MEMBERS.has(iso))return;
+        tip.classList.remove('on');
+        clearArcs(); resetActive();
+        hilite(iso); drawArcs(iso);
+        if(isMobile()) showCard(iso,ev.clientX,ev.clientY);
+        else           showPanel(iso);
+      });
+
+    // Country labels removed — clean map
+  });
+
+function darken(hex,a){
+  const n=parseInt(hex.replace('#',''),16)||0;
+  return `rgb(${Math.round(((n>>16)&255)*(1-a))},${Math.round(((n>>8)&255)*(1-a))},${Math.round((n&255)*(1-a))})`;
+}
+
+// ── ARCS ─────────────────────────────────────────────────────────────────
+function getPt(iso){return centroids[iso]||(FALL[iso]?proj(FALL[iso]):null);}
+
+function drawArc(f,t,col){
+  const p1=getPt(f), p2=getPt(t); if(!p1||!p2)return;
+  const mx=(p1[0]+p2[0])/2, my=(p1[1]+p2[1])/2;
+  const dx=p2[0]-p1[0], dy=p2[1]-p1[1], dist=Math.sqrt(dx*dx+dy*dy);
+  const cv=Math.min(dist*.38,130);
+  const cpx=mx-dy/dist*cv, cpy=my+dx/dist*cv;
+  const a=gArcs.append('path').attr('class','arc')
+    .attr('d',`M${p1[0]},${p1[1]} Q${cpx},${cpy} ${p2[0]},${p2[1]}`)
+    .attr('stroke',col).style('stroke-dashoffset',0);
+  setTimeout(()=>a.classed('on',true),10);
+  [p1,p2].forEach(p=>{
+    const dot=gDots.append('circle').attr('class','adot')
+      .attr('cx',p[0]).attr('cy',p[1]).attr('r',4.5)
+      .attr('fill',col).attr('stroke','#fff').attr('stroke-width',1.5);
+    setTimeout(()=>dot.classed('on',true),50);
+  });
+}
+
+function drawArcs(iso){
+  p2pFor(iso).forEach(lk=>{
+    drawArc(lk.from.iso,lk.to.iso,ARC_COL[lk.topic]||'#2980b9');
+    const partner=lk.from.iso===iso?lk.to.iso:lk.from.iso;
+    d3.selectAll('.country.member').filter(d=>N2I[String(d.id).padStart(3,'0')]===partner).classed('p2p-hi',true);
+  });
+}
+
+function clearArcs(){gArcs.selectAll('*').remove();gDots.selectAll('*').remove();}
+function resetActive(){d3.selectAll('.country.active').classed('active',false);d3.selectAll('.country.p2p-hi').classed('p2p-hi',false);d3.selectAll('.country.dimmed').classed('dimmed',false);}
+function hilite(iso){d3.selectAll('.country.member').filter(d=>N2I[String(d.id).padStart(3,'0')]===iso).classed('active',true);}
+
+// ── REGION FILTER ─────────────────────────────────────────────────────────
+const allRegions=[...new Set(Object.values(CD).map(d=>d.region))].sort();
+let activeReg=null;
+const rfilter=document.getElementById('rfilter');
+allRegions.forEach(r=>{
+  const t=document.createElement('div'); t.className='rtag'; t.textContent=RS[r]||r; t.title=r;
+  t.addEventListener('click',()=>{
+    if(activeReg===r){
+      activeReg=null;t.classList.remove('on');t.style.background='';
+      dim(null);showEmpty();
+    } else {
+      rfilter.querySelectorAll('.rtag').forEach(x=>{x.classList.remove('on');x.style.background='';});
+      t.classList.add('on');t.style.background=RC[r]||'#00ad6b';
+      activeReg=r;dim(r);showRegion(r);
+    }
+  });
+  rfilter.appendChild(t);
+});
+function dim(reg){
+  d3.selectAll('.country.member').classed('dimmed',d=>{
+    if(!reg)return false;
+    const iso=N2I[String(d.id).padStart(3,'0')];
+    return iso?CD[iso]?.region!==reg:false;
+  });
+}
+
+// ── SEARCH ────────────────────────────────────────────────────────────────
+document.getElementById('search').addEventListener('input',function(){
+  const q=this.value.trim().toLowerCase();
+  if(!q){d3.selectAll('.country.member').classed('dimmed',false);showEmpty();return;}
+  activeReg=null; rfilter.querySelectorAll('.rtag').forEach(x=>{x.classList.remove('on');x.style.background='';});
+  resetActive();
+  const matches=[];
+  Object.entries(CD).forEach(([iso,info])=>{
+    const cm=info.country.toLowerCase().includes(q);
+    const bm=info.banks.filter(b=>b.toLowerCase().includes(q));
+    if(cm||bm.length)(bm.length?bm:info.banks).forEach(b=>matches.push({iso,info,b}));
+  });
+  const mset=new Set(matches.map(m=>m.iso));
+  d3.selectAll('.country.member').classed('dimmed',d=>{const iso=N2I[String(d.id).padStart(3,'0')];return iso?!mset.has(iso):false;});
+  const pb=document.getElementById('pbody'); pb.innerHTML='';
+  document.getElementById('panel-sub').textContent=`${matches.length} result${matches.length!==1?'s':''}`;
+  if(!matches.length){pb.innerHTML='<div class="empty"><div class="ei">🔍</div><div class="et">No matches found.</div></div>';return;}
+  matches.forEach(({iso,info,b})=>{
+    const el=document.createElement('div'); el.className='sres';
+    el.innerHTML=`<div class="sc">${hl(info.country,q)}</div><div class="sb">${hl(b,q)}</div><div class="sr">${info.region}</div>`;
+    el.addEventListener('click',()=>{clearArcs();resetActive();hilite(iso);drawArcs(iso);showPanel(iso);});
+    pb.appendChild(el);
+  });
+});
+function hl(t,q){return t.replace(new RegExp(`(${q.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')})`, 'gi'),'<mark>$1</mark>');}
+
+// ── TABS ──────────────────────────────────────────────────────────────────
+let curTab='members';
+function setTab(tab){
+  curTab=tab;
+  document.getElementById('tab-members').classList.toggle('active',tab==='members');
+  document.getElementById('tab-p2p').classList.toggle('active',tab==='p2p');
+  document.getElementById('search-row').style.display=tab==='members'?'':'none';
+  document.getElementById('rfilter').style.display=tab==='members'?'':'none';
+  clearArcs(); resetActive();
+  if(tab==='members'){document.getElementById('panel-title').textContent='Member Banks';showEmpty();}
+  else{document.getElementById('panel-title').textContent='P2P Exchanges';showP2PList();}
+}
+
+function showP2PList(){
+  const pb=document.getElementById('pbody'); pb.innerHTML='';
+  document.getElementById('panel-sub').textContent='Click to highlight on map';
+  const byT={};
+  P2P.forEach(p=>{if(!byT[p.topic])byT[p.topic]=[];byT[p.topic].push(p);});
+  Object.entries(byT).forEach(([topic,links])=>{
+    const col=ARC_COL[topic]||'#2980b9';
+    const banks=new Map();
+    links.forEach(l=>{banks.set(l.from.abbr,{abbr:l.from.abbr,iso:l.from.iso,c:CD[l.from.iso]?.country});banks.set(l.to.abbr,{abbr:l.to.abbr,iso:l.to.iso,c:CD[l.to.iso]?.country});});
+    const item=document.createElement('div'); item.className='p2p-li';
+    const ba=[...banks.values()];
+    const bh=ba.map((b,i)=>`<span class="ptag" style="border-color:${col}44;color:${col};background:${col}0d">${b.abbr} <span style="opacity:.6;font-size:.48rem">${b.c}</span></span>${i<ba.length-1?'<span class="parr">↔</span>':''}`).join('');
+    item.innerHTML=`<div class="p2p-lt" style="color:${col}">${topic}</div><div class="p2p-lp">${bh}</div>`;
+    item.addEventListener('click',()=>{
+      pb.querySelectorAll('.p2p-li').forEach(e=>e.classList.remove('on'));
+      item.classList.add('on'); clearArcs(); resetActive();
+      const inv=new Set();
+      links.forEach(l=>{drawArc(l.from.iso,l.to.iso,col);inv.add(l.from.iso);inv.add(l.to.iso);});
+      d3.selectAll('.country.member').each(function(d){
+        const iso=N2I[String(d.id).padStart(3,'0')];if(!iso)return;
+        d3.select(this).classed('dimmed',!inv.has(iso)).classed('p2p-hi',inv.has(iso));
+      });
+    });
+    pb.appendChild(item);
+  });
+}
+
+// ── DESKTOP PANEL ─────────────────────────────────────────────────────────
+function showEmpty(){
+  document.getElementById('panel-sub').textContent='Select a highlighted country';
+  document.getElementById('pbody').innerHTML='<div class="empty"><div class="ei">🌍</div><div class="et">Click a highlighted country to explore its member banks and P2P exchanges.</div></div>';
+}
+
+function buildBankList(iso, container){
+  const info=CD[iso], col=rc(iso);
+  // header
+  const hd=document.createElement('div'); hd.className='chd'; hd.style.borderLeftColor=col;
+  hd.innerHTML=`<div class="cn">${info.country}</div><div class="cr" style="color:${col}">${info.region}</div><div class="cc">${MEMBER_COUNTS[iso]||info.banks.length} member engagements · ${info.banks.length} bank${info.banks.length!==1?'s':''}</div>`;
+  container.appendChild(hd);
+  // banks
+  const sl=document.createElement('div'); sl.className='slbl'; sl.textContent='Member Banks'; container.appendChild(sl);
+  info.banks.forEach(b=>{const d=document.createElement('div');d.className='bitem';d.textContent=b;container.appendChild(d);});
+  // P2P
+  const links=p2pFor(iso);
+  if(links.length){
+    const sp=document.createElement('div'); sp.className='slbl'; sp.style.color='#0f8b93'; sp.textContent=`P2P Exchanges (${links.length})`; container.appendChild(sp);
+    const sec=document.createElement('div'); sec.className='p2p-sec';
+    links.forEach(lk=>{
+      const col2=ARC_COL[lk.topic]||'#2980b9';
+      const isSelf=lk.from.iso===iso;
+      const sB=isSelf?lk.from:lk.to, oB=isSelf?lk.to:lk.from;
+      const oC=CD[oB.iso]?.country||oB.iso;
+      const card=document.createElement('div'); card.className='p2p-card';
+      card.innerHTML=`<div class="p2p-topic" style="color:${col2}">${lk.topic}</div><div class="p2p-row"><span class="ptag s">${sB.abbr}</span><span class="parr">↔</span><span class="ptag" style="border-color:${col2}44;color:${col2};background:${col2}0d">${oB.abbr} <span style="opacity:.65;font-size:.5rem">${oC}</span></span></div>`;
+      card.addEventListener('click',()=>{
+        sec.querySelectorAll('.p2p-card').forEach(c=>c.classList.remove('on'));
+        card.classList.add('on'); clearArcs();
+        d3.selectAll('.country.p2p-hi').classed('p2p-hi',false);
+        drawArc(lk.from.iso,lk.to.iso,col2);
+        d3.selectAll('.country.member').filter(d=>N2I[String(d.id).padStart(3,'0')]===(isSelf?lk.to.iso:lk.from.iso)).classed('p2p-hi',true);
+      });
+      sec.appendChild(card);
+    });
+    container.appendChild(sec);
+  }
+}
+
+function showPanel(iso){
+  if(curTab==='p2p'){curTab='members';document.getElementById('tab-members').classList.add('active');document.getElementById('tab-p2p').classList.remove('active');document.getElementById('search-row').style.display='';document.getElementById('rfilter').style.display='';}
+  document.getElementById('panel-title').textContent='Member Banks';
+  document.getElementById('panel-sub').textContent=CD[iso].region;
+  const pb=document.getElementById('pbody'); pb.innerHTML='';
+  buildBankList(iso, pb);
+  pb.scrollTop=0;
+}
+
+// ── MOBILE CARD ───────────────────────────────────────────────────────────
+let mISO=null;
+const mcard=document.getElementById('mcard');
+
+function showCard(iso, cx, cy){
+  const info=CD[iso], col=rc(iso);
+  mISO=iso;
+  document.getElementById('mcard-name').textContent=info.country;
+  const reg=document.getElementById('mcard-reg');
+  reg.textContent=RS[info.region]||info.region; reg.style.background=col;
+  document.getElementById('mcard-banks').textContent=MEMBER_COUNTS[iso]||info.banks.length;
+  const p2pl=p2pFor(iso).length;
+  document.getElementById('mcard-p2p').textContent=p2pl||'—';
+  // position
+  const r=mapWrap.getBoundingClientRect();
+  const mx=cx-r.left, my=cy-r.top;
+  const cw=210, ch=150;
+  let left=Math.min(Math.max(mx-cw/2, 8), W-cw-8);
+  let top=my-ch-18; if(top<8) top=my+20;
+  mcard.style.left=left+'px'; mcard.style.top=top+'px';
+  mcard.classList.add('on');
+}
+
+function hideCard(){ mcard.classList.remove('on'); mISO=null; }
+
+document.getElementById('mcard-x').addEventListener('click', hideCard);
+document.getElementById('mcard-btn').addEventListener('click',()=>{ if(mISO) openDrawer(mISO); });
+
+// tap ocean to dismiss
+svg.on('click',function(ev){
+  if(isMobile()&&ev.target.classList.contains('sphere')) hideCard();
+});
+
+// ── MOBILE DRAWER ─────────────────────────────────────────────────────────
+const drawer=document.getElementById('drawer');
+const dscrim=document.getElementById('dscrim');
+
+function openDrawer(iso){
+  document.getElementById('drawer-title').textContent=CD[iso].country;
+  const db=document.getElementById('drawer-body'); db.innerHTML='';
+  buildBankList(iso, db);
+  db.scrollTop=0;
+  drawer.classList.add('on'); dscrim.classList.add('on');
+  hideCard();
+}
+
+function closeDrawer(){ drawer.classList.remove('on'); dscrim.classList.remove('on'); }
+
+document.getElementById('drawer-close').addEventListener('click', closeDrawer);
+document.getElementById('drawer-grip').addEventListener('click', closeDrawer);
+dscrim.addEventListener('click', closeDrawer);
+
+// ── RESIZE ────────────────────────────────────────────────────────────────
+
+// ── SHOW REGION IN PANEL ──────────────────────────────────────────────────
+function showRegion(region){
+  const col=RC[region]||'#00ad6b';
+  document.getElementById('panel-title').textContent='Member Banks';
+  document.getElementById('panel-sub').textContent=region;
+  const pb=document.getElementById('pbody'); pb.innerHTML='';
+
+  // Region header
+  const rhd=document.createElement('div');
+  rhd.style.cssText=`padding:12px 18px 10px;border-bottom:1px solid var(--border);border-left:4px solid ${col};`;
+  rhd.innerHTML=`<div style="font-family:'Playfair Display',serif;font-size:1rem;font-weight:600;color:var(--text);line-height:1.3">${region}</div>`;
+  pb.appendChild(rhd);
+
+  // Countries in this region, sorted by name
+  const countries=Object.entries(CD)
+    .filter(([,info])=>info.region===region)
+    .sort((a,b)=>a[1].country.localeCompare(b[1].country));
+
+  const slbl=document.createElement('div');slbl.className='slbl';
+  slbl.textContent=`${countries.length} member countr${countries.length!==1?'ies':'y'}`;
+  pb.appendChild(slbl);
+
+  countries.forEach(([iso,info])=>{
+    const item=document.createElement('div');
+    item.style.cssText='padding:9px 18px;border-bottom:1px solid #eef2f0;cursor:pointer;transition:background .14s;';
+    const mc=MEMBER_COUNTS[iso]||info.banks.length;
+    item.innerHTML=`
+      <div style="font-size:.78rem;font-weight:500;color:var(--text)">${info.country}</div>
+      <div style="font-size:.6rem;color:var(--muted);margin-top:2px">${mc} engagement${mc!==1?'s':''} · ${info.banks.length} bank${info.banks.length!==1?'s':''}</div>`;
+    item.addEventListener('mouseover',()=>item.style.background='#f3fbf7');
+    item.addEventListener('mouseout',()=>item.style.background='');
+    item.addEventListener('click',()=>{
+      clearArcs();resetActive();hilite(iso);drawArcs(iso);showPanel(iso);
+    });
+    pb.appendChild(item);
+  });
+  pb.scrollTop=0;
+}
+
+window.addEventListener('resize',()=>{
+  W=mapWrap.clientWidth; H=mapWrap.clientHeight;
+  proj.scale(W/6.2).translate([W/2,H/2]);
+  svg.attr('viewBox',`0 0 ${W} ${H}`);
+  svg.selectAll('path').attr('d',pg);
+  svg.selectAll('.country').each(function(d){
+    const iso=N2I[String(d.id).padStart(3,'0')];
+    if(iso){const c=pg.centroid(d);if(c&&!isNaN(c[0]))centroids[iso]=c;}
+  });
+
+  clearArcs();
+});
+</script>
+</body>
+</html>
