@@ -55,11 +55,7 @@ header {
 .country.active { stroke:#1a2e24 !important; stroke-width:1.8px !important; opacity:1 !important; }
 .country.p2p-hi { stroke:var(--p2p) !important; stroke-width:1.8px !important; opacity:1 !important; }
 .country.dimmed { opacity:.14; }
-.country-label {
-  font-family:'IBM Plex Mono',monospace; font-size:9px; font-weight:500;
-  text-anchor:middle; dominant-baseline:middle; pointer-events:none;
-  paint-order:stroke fill; stroke:#fff; stroke-width:3px; stroke-linejoin:round;
-}
+
 /* P2P arcs */
 .arc { fill:none; stroke-width:2px; opacity:0; pointer-events:none; transition:opacity .3s; stroke-dasharray:6 4; animation:flow 1.8s linear infinite; }
 .arc.on { opacity:.88; }
@@ -250,7 +246,7 @@ mark { background:rgba(0,173,107,.15); border-radius:2px; padding:0 1px; }
       <div class="mcard-stats">
         <div class="mcard-stat">
           <div class="mcard-val"  id="mcard-banks">—</div>
-          <div class="mcard-lbl">Banks</div>
+          <div class="mcard-lbl">Engagements</div>
         </div>
         <div class="mcard-div"></div>
         <div class="mcard-stat">
@@ -273,7 +269,7 @@ mark { background:rgba(0,173,107,.15); border-radius:2px; padding:0 1px; }
     </div>
     <div class="stats">
       <div class="stat"><div class="sv">95</div><div class="sl">Countries</div></div>
-      <div class="stat"><div class="sv">147</div><div class="sl">Banks</div></div>
+      <div class="stat"><div class="sv">715</div><div class="sl">Engagements</div></div>
       <div class="stat"><div class="sv b">4</div><div class="sl">P2P Topics</div></div>
     </div>
     <div class="rfilter" id="rfilter"></div>
@@ -314,6 +310,9 @@ const P2P=[
   {topic:"Agroecology: JIVA project",       from:{iso:"IN",abbr:"NABARD"}, to:{iso:"MW",abbr:"MAIIC"}}
 ];
 
+
+const MEMBER_COUNTS={"AF":4,"DZ":1,"AO":4,"AR":5,"AM":1,"AZ":9,"BS":5,"BH":1,"BD":4,"BZ":11,"BT":3,"BO":7,"BW":32,"BR":63,"BF":2,"BI":4,"BJ":18,"KH":10,"CM":1,"CL":6,"CN":13,"CO":52,"CK":1,"CR":5,"CU":3,"CI":5,"CD":1,"DO":5,"EC":8,"EG":2,"SV":7,"SZ":2,"ET":5,"FJ":5,"GA":5,"GH":7,"GT":2,"HN":3,"IN":19,"ID":2,"IR":1,"JM":1,"KZ":3,"KE":10,"LA":5,"LS":9,"LR":1,"MG":1,"MW":7,"MY":2,"ML":16,"MR":2,"MU":3,"MX":26,"MA":14,"MZ":4,"MM":1,"NA":2,"NP":3,"NI":10,"NE":27,"NG":18,"CY":1,"OM":2,"PK":3,"PA":1,"PY":20,"PE":12,"PH":4,"QA":1,"RW":10,"WS":3,"SA":1,"SN":6,"SC":1,"SG":1,"SB":4,"SO":1,"ZA":25,"LK":1,"SD":3,"TZ":13,"TH":5,"TT":2,"TN":6,"TR":26,"AE":5,"UG":19,"UY":5,"UZ":9,"VU":3,"VN":1,"YE":4,"ZM":7,"ZW":1};
+
 const ARC_COL={"Sustainability strategies":"#2980b9","Environmental impact assessment":"#00ad6b","Agri-finance & monitoring":"#e67e22","Agroecology: JIVA project":"#8e44ad"};
 
 const RC={"Latin America and the Caribbean":"#00ad6b","East and Southern Africa":"#2d8a4e","West and Central Africa":"#1d6fa8","Asia and the Pacific":"#4db9ef","Near East, North Africa and Europe":"#0f8b93"};
@@ -345,7 +344,7 @@ svg.append('path').datum(graticule()).attr('class','graticule').attr('d',pg);
 
 const gArcs=svg.append('g');
 const gDots=svg.append('g');
-const gLabels=svg.append('g');
+
 
 const tip=document.getElementById('tip');
 const centroids={};
@@ -372,7 +371,7 @@ fetch('https://cdn.jsdelivr.net/npm/world-atlas@2/countries-110m.json')
         document.getElementById('tip-name').textContent=info.country;
         const tr=document.getElementById('tip-region'); tr.textContent=info.region; tr.style.color=col;
         tip.style.borderLeftColor=col;
-        document.getElementById('tip-count').textContent=`${info.banks.length} member bank${info.banks.length>1?'s':''}`;
+        const mc=MEMBER_COUNTS[iso]||info.banks.length; document.getElementById('tip-count').textContent=`${mc} member engagement${mc>1?'s':''}`;
         const p2pl=p2pFor(iso).length;
         const tp=document.getElementById('tip-p2p');
         tp.textContent=p2pl?`↔ ${p2pl} P2P exchange${p2pl>1?'s':''}`:'' ; tp.style.display=p2pl?'':'none';
@@ -393,20 +392,7 @@ fetch('https://cdn.jsdelivr.net/npm/world-atlas@2/countries-110m.json')
         else           showPanel(iso);
       });
 
-    // Labels
-    feats.forEach(f=>{
-      const iso=N2I[String(f.id).padStart(3,'0')];
-      if(!iso||!MEMBERS.has(iso)||SKIP_LABEL.has(iso))return;
-      const c=pg.centroid(f); if(!c||isNaN(c[0]))return;
-      const b=pg.bounds(f), bw=b[1][0]-b[0][0], bh=b[1][1]-b[0][1];
-      if(bw<10&&bh<7)return;
-      const name=CD[iso].country;
-      const short=name.length>12?name.split(' ')[0]:name;
-      const col=rc(iso)||'#1a2e24';
-      const dk=darken(col,.45);
-      gLabels.append('text').attr('class','country-label')
-        .attr('x',c[0]).attr('y',c[1]).style('fill',dk).text(short);
-    });
+    // Country labels removed — clean map
   });
 
 function darken(hex,a){
@@ -454,8 +440,14 @@ const rfilter=document.getElementById('rfilter');
 allRegions.forEach(r=>{
   const t=document.createElement('div'); t.className='rtag'; t.textContent=RS[r]||r; t.title=r;
   t.addEventListener('click',()=>{
-    if(activeReg===r){activeReg=null;t.classList.remove('on');t.style.background='';dim(null);}
-    else{rfilter.querySelectorAll('.rtag').forEach(x=>{x.classList.remove('on');x.style.background='';});t.classList.add('on');t.style.background=RC[r]||'#00ad6b';activeReg=r;dim(r);}
+    if(activeReg===r){
+      activeReg=null;t.classList.remove('on');t.style.background='';
+      dim(null);showEmpty();
+    } else {
+      rfilter.querySelectorAll('.rtag').forEach(x=>{x.classList.remove('on');x.style.background='';});
+      t.classList.add('on');t.style.background=RC[r]||'#00ad6b';
+      activeReg=r;dim(r);showRegion(r);
+    }
   });
   rfilter.appendChild(t);
 });
@@ -543,7 +535,7 @@ function buildBankList(iso, container){
   const info=CD[iso], col=rc(iso);
   // header
   const hd=document.createElement('div'); hd.className='chd'; hd.style.borderLeftColor=col;
-  hd.innerHTML=`<div class="cn">${info.country}</div><div class="cr" style="color:${col}">${info.region}</div><div class="cc">${info.banks.length} member bank${info.banks.length!==1?'s':''}</div>`;
+  hd.innerHTML=`<div class="cn">${info.country}</div><div class="cr" style="color:${col}">${info.region}</div><div class="cc">${MEMBER_COUNTS[iso]||info.banks.length} member engagements · ${info.banks.length} bank${info.banks.length!==1?'s':''}</div>`;
   container.appendChild(hd);
   // banks
   const sl=document.createElement('div'); sl.className='slbl'; sl.textContent='Member Banks'; container.appendChild(sl);
@@ -592,7 +584,7 @@ function showCard(iso, cx, cy){
   document.getElementById('mcard-name').textContent=info.country;
   const reg=document.getElementById('mcard-reg');
   reg.textContent=RS[info.region]||info.region; reg.style.background=col;
-  document.getElementById('mcard-banks').textContent=info.banks.length;
+  document.getElementById('mcard-banks').textContent=MEMBER_COUNTS[iso]||info.banks.length;
   const p2pl=p2pFor(iso).length;
   document.getElementById('mcard-p2p').textContent=p2pl||'—';
   // position
@@ -635,6 +627,46 @@ document.getElementById('drawer-grip').addEventListener('click', closeDrawer);
 dscrim.addEventListener('click', closeDrawer);
 
 // ── RESIZE ────────────────────────────────────────────────────────────────
+
+// ── SHOW REGION IN PANEL ──────────────────────────────────────────────────
+function showRegion(region){
+  const col=RC[region]||'#00ad6b';
+  document.getElementById('panel-title').textContent='Member Banks';
+  document.getElementById('panel-sub').textContent=region;
+  const pb=document.getElementById('pbody'); pb.innerHTML='';
+
+  // Region header
+  const rhd=document.createElement('div');
+  rhd.style.cssText=`padding:12px 18px 10px;border-bottom:1px solid var(--border);border-left:4px solid ${col};`;
+  rhd.innerHTML=`<div style="font-family:'Playfair Display',serif;font-size:1rem;font-weight:600;color:var(--text);line-height:1.3">${region}</div>`;
+  pb.appendChild(rhd);
+
+  // Countries in this region, sorted by name
+  const countries=Object.entries(CD)
+    .filter(([,info])=>info.region===region)
+    .sort((a,b)=>a[1].country.localeCompare(b[1].country));
+
+  const slbl=document.createElement('div');slbl.className='slbl';
+  slbl.textContent=`${countries.length} member countr${countries.length!==1?'ies':'y'}`;
+  pb.appendChild(slbl);
+
+  countries.forEach(([iso,info])=>{
+    const item=document.createElement('div');
+    item.style.cssText='padding:9px 18px;border-bottom:1px solid #eef2f0;cursor:pointer;transition:background .14s;';
+    const mc=MEMBER_COUNTS[iso]||info.banks.length;
+    item.innerHTML=`
+      <div style="font-size:.78rem;font-weight:500;color:var(--text)">${info.country}</div>
+      <div style="font-size:.6rem;color:var(--muted);margin-top:2px">${mc} engagement${mc!==1?'s':''} · ${info.banks.length} bank${info.banks.length!==1?'s':''}</div>`;
+    item.addEventListener('mouseover',()=>item.style.background='#f3fbf7');
+    item.addEventListener('mouseout',()=>item.style.background='');
+    item.addEventListener('click',()=>{
+      clearArcs();resetActive();hilite(iso);drawArcs(iso);showPanel(iso);
+    });
+    pb.appendChild(item);
+  });
+  pb.scrollTop=0;
+}
+
 window.addEventListener('resize',()=>{
   W=mapWrap.clientWidth; H=mapWrap.clientHeight;
   proj.scale(W/6.2).translate([W/2,H/2]);
@@ -644,10 +676,7 @@ window.addEventListener('resize',()=>{
     const iso=N2I[String(d.id).padStart(3,'0')];
     if(iso){const c=pg.centroid(d);if(c&&!isNaN(c[0]))centroids[iso]=c;}
   });
-  gLabels.selectAll('text').each(function(){
-    const iso=Object.keys(CD).find(k=>CD[k].country.startsWith(this.textContent.replace(/\.\.\.$/,'')));
-    if(iso&&centroids[iso]){d3.select(this).attr('x',centroids[iso][0]).attr('y',centroids[iso][1]);}
-  });
+
   clearArcs();
 });
 </script>
